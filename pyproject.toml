@@ -16,4 +16,6 @@ dependencies = [
     "seaborn>=0.12.0",
     "torchvision>=0.22.0",
     "utils>=1.0.2",
+    "marimo>=0.20.4",
+    "anywidget>=0.9.21",
 ]

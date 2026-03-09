@@ -31,6 +31,74 @@ def load_model(weights_path, device):
         model.half()
     return model
 
+def measure_fish_contour(frame, bbox, padding=5):
+    """Measure fish dimensions using contour analysis within a YOLO bounding box.
+
+    Crops the bbox region, finds the largest contour, fits a minimum-area
+    rotated rectangle, and returns precise length and width in pixels.
+    Falls back to axis-aligned bbox dimensions if no valid contour is found.
+    """
+    h_frame, w_frame = frame.shape[:2]
+    x1, y1, x2, y2 = bbox
+
+    # Pad the crop to avoid clipping fish edges
+    x1p = max(0, x1 - padding)
+    y1p = max(0, y1 - padding)
+    x2p = min(w_frame, x2 + padding)
+    y2p = min(h_frame, y2 + padding)
+    crop = frame[y1p:y2p, x1p:x2p]
+
+    # Fallback values from axis-aligned bbox
+    bw, bh = x2 - x1, y2 - y1
+    fallback = {
+        "length_px":     float(max(bw, bh)),
+        "width_px":      float(min(bw, bh)),
+        "angle":         0.0,
+        "contour_found": False,
+        "rotated_rect":  None,
+    }
+
+    if crop.size == 0:
+        return fallback
+
+    # Preprocess: grayscale → blur → edge detection → dilate
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+    edges = cv2.dilate(edges, None, iterations=1)
+
+    # Find contours, select the largest by area
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return fallback
+
+    largest = max(contours, key=cv2.contourArea)
+
+    # Reject if contour is too small relative to the crop (likely noise)
+    crop_area = (x2p - x1p) * (y2p - y1p)
+    if cv2.contourArea(largest) < 0.10 * crop_area:
+        return fallback
+
+    # Fit minimum-area rotated rectangle
+    rect = cv2.minAreaRect(largest)
+    (cx_local, cy_local), (rect_w, rect_h), angle = rect
+
+    length_px = max(rect_w, rect_h)
+    width_px = min(rect_w, rect_h)
+
+    # Convert center back to frame coordinates for drawing
+    cx_frame = cx_local + x1p
+    cy_frame = cy_local + y1p
+    rotated_rect_frame = ((cx_frame, cy_frame), (rect_w, rect_h), angle)
+
+    return {
+        "length_px":     float(length_px),
+        "width_px":      float(width_px),
+        "angle":         float(angle),
+        "contour_found": True,
+        "rotated_rect":  rotated_rect_frame,
+    }
+
 def detect_frame(model, frame, device, img_size=640, conf_thres=0.25, iou_thres=0.45):
     """Run fish detection on a single frame. Returns list of detections."""
     # Preprocess: letterbox resize, BGR→RGB, HWC→CHW, normalize
@@ -54,32 +122,48 @@ def detect_frame(model, frame, device, img_size=640, conf_thres=0.25, iou_thres=
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], frame.shape).round()
             for *xyxy, conf, cls in det:
                 x1, y1, x2, y2 = [int(v) for v in xyxy]
-                w = x2 - x1
-                h = y2 - y1
-                length_px = max(w, h)
+                bbox = (x1, y1, x2, y2)
+                measurement = measure_fish_contour(frame, bbox)
                 detections.append({
-                    "bbox":       (x1, y1, x2, y2),
-                    "confidence": float(conf),
-                    "class":      int(cls),
-                    "length_px":  length_px,
+                    "bbox":          bbox,
+                    "confidence":    float(conf),
+                    "class":         int(cls),
+                    "length_px":     measurement["length_px"],
+                    "width_px":      measurement["width_px"],
+                    "angle":         measurement["angle"],
+                    "contour_found": measurement["contour_found"],
+                    "rotated_rect":  measurement["rotated_rect"],
                 })
 
     return detections
 
 def draw_detections(frame, detections):
-    """Draw bounding boxes and length annotations on the frame."""
+    """Draw bounding boxes, rotated rectangles, and size annotations on the frame."""
     for det in detections:
         x1, y1, x2, y2 = det["bbox"]
         conf = det["confidence"]
         length_px = det["length_px"]
+        width_px = det["width_px"]
+        rotated_rect = det["rotated_rect"]
 
+        # Axis-aligned YOLO bounding box (green)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        label = f"Fish {conf:.2f} | {length_px}px"
-        # Background for text readability
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+
+        # Rotated rectangle from contour analysis (cyan)
+        if rotated_rect is not None:
+            box_points = cv2.boxPoints(rotated_rect).astype(int)
+            cv2.drawContours(frame, [box_points], 0, (255, 255, 0), 2)
+
+        # Label with both dimensions
+        if det["contour_found"]:
+            label = f"Fish {conf:.2f} | L:{length_px:.0f}px W:{width_px:.0f}px"
+        else:
+            label = f"Fish {conf:.2f} | L:{length_px:.0f}px W:{width_px:.0f}px (bbox)"
+
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
         cv2.rectangle(frame, (x1, y1 - th - 8), (x1 + tw, y1), (0, 255, 0), -1)
         cv2.putText(frame, label, (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
     return frame
 
@@ -123,8 +207,10 @@ def process_videos(data_dir="data", weights_path="data/FishYolov7_tiny.pt", img_
             if detections:
                 print(f"  Frame {frame_count}: {len(detections)} fish detected")
                 for i, det in enumerate(detections):
-                    print(f"    Fish {i + 1}: confidence={det['confidence']:.2f}, "
-                          f"length={det['length_px']}px, bbox={det['bbox']}")
+                    method = "contour" if det["contour_found"] else "bbox"
+                    print(f"    Fish {i + 1}: conf={det['confidence']:.2f}, "
+                          f"L={det['length_px']:.0f}px, W={det['width_px']:.0f}px, "
+                          f"angle={det['angle']:.1f}°, method={method}")
 
             annotated = draw_detections(frame, detections)
             cv2.imshow(f"Fish Detection - {video_name}", annotated)

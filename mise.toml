@@ -1,0 +1,6 @@
+[tools]
+python = "3.14"
+uv = "latest"
+
+[tasks."marimo:run"]
+run = 'uv run marimo run notebook.py'
