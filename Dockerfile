@@ -13,6 +13,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
+ENV PYTHONPATH="/app/yolov7"
+
 EXPOSE 2718
 
 CMD ["uv", "run", "marimo", "run", "notebook.py", "--host", "0.0.0.0", "--port", "2718"]

@@ -4,3 +4,6 @@ uv = "latest"
 
 [tasks."marimo:run"]
 run = 'uv run marimo run notebook.py'
+
+[tasks.ci]
+run = 'docker build -t fish-length .'

@@ -27,10 +27,10 @@ def _():
     import os
     import glob
 
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(".")), "yolov7"))
-    # Also handle running from the project root
-    if os.path.isdir("yolov7"):
-        sys.path.insert(0, os.path.abspath("yolov7"))
+    # Add yolov7 to sys.path so `from models.common import Conv` etc. work
+    _yolov7_path = os.path.abspath("yolov7")
+    if os.path.isdir(_yolov7_path) and _yolov7_path not in sys.path:
+        sys.path.insert(0, _yolov7_path)
 
     import cv2
     import torch
