@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.20.4"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", auto_download=["html"])
 
 
 @app.cell
@@ -900,6 +900,127 @@ def _(
             mo.md(f"### Size comparison (scale: {_scale:.2f} px/cm)"),
             mo.ui.table(_df),
             mo.md(_summary),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    video_upload = mo.ui.file(
+        filetypes=[".mp4", ".avi", ".mov", ".mkv"],
+        label="Upload fish video",
+    )
+    mo.vstack(
+        [
+            mo.md("---"),
+            mo.md("## Video Upload"),
+            mo.md("Upload a video file to detect fish frame by frame."),
+            video_upload,
+        ]
+    )
+    return (video_upload,)
+
+
+@app.cell
+def _(cv2, mo, video_upload):
+    import tempfile, os as _os
+
+    mo.stop(not video_upload.value, mo.md("*Upload a video above.*"))
+
+    _file = video_upload.value[0]
+    _suffix = _os.path.splitext(_file.name)[-1] or ".mp4"
+    _tmp = tempfile.NamedTemporaryFile(delete=False, suffix=_suffix)
+    _tmp.write(_file.contents)
+    _tmp.flush()
+    _tmp.close()
+    uploaded_video_path = _tmp.name
+
+    _cap = cv2.VideoCapture(uploaded_video_path)
+    uploaded_video_total_frames = int(_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    uploaded_video_fps = _cap.get(cv2.CAP_PROP_FPS)
+    _cap.release()
+
+    uploaded_video_frame_slider = mo.ui.slider(
+        start=0,
+        stop=max(0, uploaded_video_total_frames - 1),
+        step=1,
+        value=0,
+        label=f"Frame (0–{uploaded_video_total_frames - 1})",
+        full_width=True,
+    )
+    mo.vstack(
+        [
+            mo.md(
+                f"**{_file.name}** — {uploaded_video_total_frames} frames, {uploaded_video_fps:.1f} FPS"
+            ),
+            uploaded_video_frame_slider,
+        ]
+    )
+    return uploaded_video_frame_slider, uploaded_video_path
+
+
+@app.cell
+def _(cv2, uploaded_video_frame_slider, uploaded_video_path):
+    _cap = cv2.VideoCapture(uploaded_video_path)
+    _cap.set(cv2.CAP_PROP_POS_FRAMES, uploaded_video_frame_slider.value)
+    _ret, uploaded_video_frame = _cap.read()
+    _cap.release()
+    return (uploaded_video_frame,)
+
+
+@app.cell
+def _(
+    canny_high_slider,
+    canny_low_slider,
+    conf_slider,
+    contour_area_slider,
+    cv2,
+    detect_frame,
+    frame_to_png_bytes,
+    iou_slider,
+    mo,
+    padding_slider,
+    uploaded_video_frame,
+):
+    _detections = detect_frame(
+        uploaded_video_frame,
+        conf_thres=conf_slider.value,
+        iou_thres=iou_slider.value,
+        padding=int(padding_slider.value),
+        canny_low=int(canny_low_slider.value),
+        canny_high=int(canny_high_slider.value),
+        min_contour_ratio=contour_area_slider.value,
+    )
+
+    _annotated = uploaded_video_frame.copy()
+    for _det in _detections:
+        _x1, _y1, _x2, _y2 = _det["bbox"]
+        _conf = _det["confidence"]
+        _length_px = _det["length_px"]
+        _width_px = _det["width_px"]
+        _rotated_rect = _det["rotated_rect"]
+
+        cv2.rectangle(_annotated, (_x1, _y1), (_x2, _y2), (0, 255, 0), 2)
+        if _rotated_rect is not None:
+            _box_points = cv2.boxPoints(_rotated_rect).astype("int32")
+            cv2.drawContours(_annotated, [_box_points], 0, (255, 255, 0), 2)
+
+        _method = "" if _det["contour_found"] else " (bbox)"
+        _label = f"Fish {_conf:.2f} | L:{_length_px:.0f}px W:{_width_px:.0f}px{_method}"
+        (_tw, _th), _ = cv2.getTextSize(_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        cv2.rectangle(
+            _annotated, (_x1, _y1 - _th - 8), (_x1 + _tw, _y1), (0, 255, 0), -1
+        )
+        cv2.putText(
+            _annotated, _label, (_x1, _y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2,
+        )
+
+    mo.vstack(
+        [
+            mo.md(f"### Uploaded video — {len(_detections)} fish detected"),
+            mo.image(frame_to_png_bytes(_annotated)),
         ]
     )
     return
