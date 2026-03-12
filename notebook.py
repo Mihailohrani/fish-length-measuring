@@ -74,6 +74,7 @@ def _(Conv, nn, torch):
             model.half()
         return model
 
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model("data/FishYolov7_tiny.pt", device)
     print(f"Model loaded on {device}")
@@ -120,20 +121,34 @@ def _(frame_slider):
 
 @app.cell
 def _(mo):
-    conf_slider = mo.ui.slider(start=0.05, stop=0.95, step=0.05, value=0.25, label="Confidence threshold")
-    iou_slider = mo.ui.slider(start=0.1, stop=0.9, step=0.05, value=0.45, label="IoU threshold")
-    canny_low_slider = mo.ui.slider(start=10, stop=200, step=10, value=50, label="Canny low")
-    canny_high_slider = mo.ui.slider(start=50, stop=300, step=10, value=150, label="Canny high")
-    contour_area_slider = mo.ui.slider(start=0.0, stop=0.5, step=0.01, value=0.10, label="Min contour area ratio")
-    padding_slider = mo.ui.slider(start=0, stop=30, step=1, value=5, label="Crop padding (px)")
+    conf_slider = mo.ui.slider(
+        start=0.05, stop=0.95, step=0.05, value=0.25, label="Confidence threshold"
+    )
+    iou_slider = mo.ui.slider(
+        start=0.1, stop=0.9, step=0.05, value=0.45, label="IoU threshold"
+    )
+    canny_low_slider = mo.ui.slider(
+        start=10, stop=200, step=10, value=50, label="Canny low"
+    )
+    canny_high_slider = mo.ui.slider(
+        start=50, stop=300, step=10, value=150, label="Canny high"
+    )
+    contour_area_slider = mo.ui.slider(
+        start=0.0, stop=0.5, step=0.01, value=0.10, label="Min contour area ratio"
+    )
+    padding_slider = mo.ui.slider(
+        start=0, stop=30, step=1, value=5, label="Crop padding (px)"
+    )
 
-    mo.vstack([
-        mo.md("### Detection parameters"),
-        mo.hstack([conf_slider, iou_slider]),
-        mo.md("### Contour parameters"),
-        mo.hstack([canny_low_slider, canny_high_slider]),
-        mo.hstack([contour_area_slider, padding_slider]),
-    ])
+    mo.vstack(
+        [
+            mo.md("### Detection parameters"),
+            mo.hstack([conf_slider, iou_slider]),
+            mo.md("### Contour parameters"),
+            mo.hstack([canny_low_slider, canny_high_slider]),
+            mo.hstack([contour_area_slider, padding_slider]),
+        ]
+    )
     return (
         canny_high_slider,
         canny_low_slider,
@@ -145,12 +160,7 @@ def _(mo):
 
 
 @app.cell
-def _(cv2, frame_slider, np, video_dropdown):
-    _cap = cv2.VideoCapture(video_dropdown.value)
-    _cap.set(cv2.CAP_PROP_POS_FRAMES, frame_slider.value)
-    _ret, raw_frame = _cap.read()
-    _cap.release()
-
+def _(cv2):
     def frame_to_png_bytes(frame, max_width=960):
         _h, _w = frame.shape[:2]
         if _w > max_width:
@@ -159,8 +169,16 @@ def _(cv2, frame_slider, np, video_dropdown):
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         return buf.tobytes()
 
-    raw_frame_rgb = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2RGB) if raw_frame is not None else np.zeros((480, 640, 3), dtype=np.uint8)
-    return frame_to_png_bytes, raw_frame
+    return (frame_to_png_bytes,)
+
+
+@app.cell
+def _(cv2, frame_slider, video_dropdown):
+    _cap = cv2.VideoCapture(video_dropdown.value)
+    _cap.set(cv2.CAP_PROP_POS_FRAMES, frame_slider.value)
+    _ret, raw_frame = _cap.read()
+    _cap.release()
+    return (raw_frame,)
 
 
 @app.cell
@@ -168,6 +186,7 @@ def _():
     import anywidget
     import traitlets
     import base64
+
 
     class ClickableImage(anywidget.AnyWidget):
         _esm = """
@@ -249,17 +268,29 @@ def _():
 @app.cell
 def _(ClickableImage, base64, cv2, mo, raw_frame):
     _, _buf = cv2.imencode(".jpg", raw_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    _data_url = "data:image/jpeg;base64," + base64.b64encode(_buf.tobytes()).decode()
+    _data_url = (
+        "data:image/jpeg;base64," + base64.b64encode(_buf.tobytes()).decode()
+    )
 
     calibration_widget = mo.ui.anywidget(ClickableImage(src=_data_url, points=[]))
-    ref_length_cm = mo.ui.number(start=0.1, stop=500.0, step=0.1, value=10.0, label="Real-world distance (cm)")
+    ref_length_cm = mo.ui.number(
+        start=0.1,
+        stop=500.0,
+        step=0.1,
+        value=10.0,
+        label="Real-world distance (cm)",
+    )
 
-    mo.vstack([
-        mo.md("### Calibration — click two points on a reference object"),
-        mo.md("Click **Point A**, then **Point B** on the ends of a known-length object. Click again to reset."),
-        calibration_widget,
-        ref_length_cm,
-    ])
+    mo.vstack(
+        [
+            mo.md("### Calibration — click two points on a reference object"),
+            mo.md(
+                "Click **Point A**, then **Point B** on the ends of a known-length object. Click again to reset."
+            ),
+            calibration_widget,
+            ref_length_cm,
+        ]
+    )
     return calibration_widget, ref_length_cm
 
 
@@ -270,7 +301,9 @@ def _(calibration_widget, mo, np, ref_length_cm):
     if len(_points) == 2:
         _p1, _p2 = _points
         _px_dist = float(np.sqrt((_p2[0] - _p1[0]) ** 2 + (_p2[1] - _p1[1]) ** 2))
-        px_per_cm = _px_dist / ref_length_cm.value if ref_length_cm.value > 0 else 1.0
+        px_per_cm = (
+            _px_dist / ref_length_cm.value if ref_length_cm.value > 0 else 1.0
+        )
         mo.md(
             f"**A** ({_p1[0]}, {_p1[1]}) → **B** ({_p2[0]}, {_p2[1]}): "
             f"**{_px_dist:.1f} px** = **{ref_length_cm.value:.1f} cm** → **{px_per_cm:.2f} px/cm**"
@@ -283,23 +316,18 @@ def _(calibration_widget, mo, np, ref_length_cm):
 
 @app.cell
 def _(
-    canny_high_slider,
-    canny_low_slider,
-    conf_slider,
-    contour_area_slider,
     cv2,
     device,
-    iou_slider,
     letterbox,
     model,
     non_max_suppression,
     np,
-    padding_slider,
-    raw_frame,
     scale_coords,
     torch,
 ):
-    def measure_fish_contour(frame, bbox, padding, canny_low, canny_high, min_contour_ratio):
+    def measure_fish_contour(
+        frame, bbox, padding, canny_low, canny_high, min_contour_ratio
+    ):
         h_frame, w_frame = frame.shape[:2]
         x1, y1, x2, y2 = bbox
         x1p = max(0, x1 - padding)
@@ -325,7 +353,9 @@ def _(
         edges = cv2.Canny(blurred, canny_low, canny_high)
         edges = cv2.dilate(edges, None, iterations=1)
 
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
         if not contours:
             fallback["edges"] = edges
             return fallback
@@ -353,7 +383,16 @@ def _(
             "edges": edges,
         }
 
-    def detect_frame(frame, conf_thres, iou_thres, padding, canny_low, canny_high, min_contour_ratio, img_size=640):
+    def detect_frame(
+        frame,
+        conf_thres,
+        iou_thres,
+        padding,
+        canny_low,
+        canny_high,
+        min_contour_ratio,
+        img_size=640,
+    ):
         img = letterbox(frame, img_size, stride=32)[0]
         img = img[:, :, ::-1].transpose(2, 0, 1)
         img = np.ascontiguousarray(img)
@@ -369,24 +408,49 @@ def _(
         detections = []
         for det in pred:
             if len(det):
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], frame.shape).round()
+                det[:, :4] = scale_coords(
+                    img.shape[2:], det[:, :4], frame.shape
+                ).round()
                 for *xyxy, conf, cls in det:
                     x1, y1, x2, y2 = [int(v) for v in xyxy]
                     bbox = (x1, y1, x2, y2)
-                    m = measure_fish_contour(frame, bbox, padding, canny_low, canny_high, min_contour_ratio)
-                    detections.append({
-                        "bbox": bbox,
-                        "confidence": float(conf),
-                        "class": int(cls),
-                        "length_px": m["length_px"],
-                        "width_px": m["width_px"],
-                        "angle": m["angle"],
-                        "contour_found": m["contour_found"],
-                        "rotated_rect": m["rotated_rect"],
-                        "edges": m["edges"],
-                    })
+                    m = measure_fish_contour(
+                        frame,
+                        bbox,
+                        padding,
+                        canny_low,
+                        canny_high,
+                        min_contour_ratio,
+                    )
+                    detections.append(
+                        {
+                            "bbox": bbox,
+                            "confidence": float(conf),
+                            "class": int(cls),
+                            "length_px": m["length_px"],
+                            "width_px": m["width_px"],
+                            "angle": m["angle"],
+                            "contour_found": m["contour_found"],
+                            "rotated_rect": m["rotated_rect"],
+                            "edges": m["edges"],
+                        }
+                    )
         return detections
 
+    return (detect_frame,)
+
+
+@app.cell
+def _(
+    canny_high_slider,
+    canny_low_slider,
+    conf_slider,
+    contour_area_slider,
+    detect_frame,
+    iou_slider,
+    padding_slider,
+    raw_frame,
+):
     detections = detect_frame(
         raw_frame,
         conf_thres=conf_slider.value,
@@ -396,7 +460,7 @@ def _(
         canny_high=int(canny_high_slider.value),
         min_contour_ratio=contour_area_slider.value,
     )
-    return detect_frame, detections
+    return (detections,)
 
 
 @app.cell
@@ -417,23 +481,41 @@ def _(cv2, detections, frame_to_png_bytes, mo, px_per_cm, raw_frame):
             cv2.drawContours(_annotated, [_box_points], 0, (255, 255, 0), 2)
 
         _method = "" if _det["contour_found"] else " (bbox)"
-        _label = f"Fish {_conf:.2f} | L:{_length_cm:.1f}cm W:{_width_cm:.1f}cm{_method}"
+        _label = (
+            f"Fish {_conf:.2f} | L:{_length_cm:.1f}cm W:{_width_cm:.1f}cm{_method}"
+        )
         (_tw, _th), _ = cv2.getTextSize(_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        cv2.rectangle(_annotated, (_x1, _y1 - _th - 8), (_x1 + _tw, _y1), (0, 255, 0), -1)
-        cv2.putText(_annotated, _label, (_x1, _y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        cv2.rectangle(
+            _annotated, (_x1, _y1 - _th - 8), (_x1 + _tw, _y1), (0, 255, 0), -1
+        )
+        cv2.putText(
+            _annotated,
+            _label,
+            (_x1, _y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            2,
+        )
 
-    mo.hstack([
-        mo.vstack([
-            mo.md(f"### Detections ({len(detections)} fish)"),
-            mo.image(frame_to_png_bytes(_annotated)),
-        ]),
-    ])
+    mo.hstack(
+        [
+            mo.vstack(
+                [
+                    mo.md(f"### Detections ({len(detections)} fish)"),
+                    mo.image(frame_to_png_bytes(_annotated)),
+                ]
+            ),
+        ]
+    )
     return
 
 
 @app.cell
 def _(cv2, detections, mo, plt, raw_frame):
-    _fish_with_edges = [(_i, _d) for _i, _d in enumerate(detections) if _d.get("edges") is not None]
+    _fish_with_edges = [
+        (_i, _d) for _i, _d in enumerate(detections) if _d.get("edges") is not None
+    ]
 
     if _fish_with_edges:
         _n = len(_fish_with_edges)
@@ -443,8 +525,10 @@ def _(cv2, detections, mo, plt, raw_frame):
             _x1, _y1, _x2, _y2 = _det["bbox"]
             _pad = 5
             _h, _w = raw_frame.shape[:2]
-            _crop = raw_frame[max(0, _y1 - _pad):min(_h, _y2 + _pad),
-                              max(0, _x1 - _pad):min(_w, _x2 + _pad)]
+            _crop = raw_frame[
+                max(0, _y1 - _pad) : min(_h, _y2 + _pad),
+                max(0, _x1 - _pad) : min(_w, _x2 + _pad),
+            ]
             _crop_rgb = cv2.cvtColor(_crop, cv2.COLOR_BGR2RGB)
 
             _axes[0, _col].imshow(_crop_rgb)
@@ -467,21 +551,25 @@ def _(detections, mo, pd, px_per_cm):
     if detections:
         _rows = []
         for _i, _d in enumerate(detections):
-            _rows.append({
-                "Fish": _i + 1,
-                "Confidence": round(_d["confidence"], 3),
-                "Length (px)": round(_d["length_px"], 1),
-                "Width (px)": round(_d["width_px"], 1),
-                "Length (cm)": round(_d["length_px"] / px_per_cm, 1),
-                "Width (cm)": round(_d["width_px"] / px_per_cm, 1),
-                "Angle": round(_d["angle"], 1),
-                "Method": "contour" if _d["contour_found"] else "bbox",
-            })
+            _rows.append(
+                {
+                    "Fish": _i + 1,
+                    "Confidence": round(_d["confidence"], 3),
+                    "Length (px)": round(_d["length_px"], 1),
+                    "Width (px)": round(_d["width_px"], 1),
+                    "Length (cm)": round(_d["length_px"] / px_per_cm, 1),
+                    "Width (cm)": round(_d["width_px"] / px_per_cm, 1),
+                    "Angle": round(_d["angle"], 1),
+                    "Method": "contour" if _d["contour_found"] else "bbox",
+                }
+            )
         _df = pd.DataFrame(_rows)
-        mo.vstack([
-            mo.md(f"### Detection table (calibration: {px_per_cm:.2f} px/cm)"),
-            mo.ui.table(_df),
-        ])
+        mo.vstack(
+            [
+                mo.md(f"### Detection table (calibration: {px_per_cm:.2f} px/cm)"),
+                mo.ui.table(_df),
+            ]
+        )
     else:
         mo.md("*No detections on this frame.*")
     return
@@ -526,13 +614,15 @@ def _(
             min_contour_ratio=contour_area_slider.value,
         )
         for _d in _dets:
-            _all_detections.append({
-                "frame": int(_idx),
-                "confidence": _d["confidence"],
-                "length_px": _d["length_px"],
-                "width_px": _d["width_px"],
-                "method": "contour" if _d["contour_found"] else "bbox",
-            })
+            _all_detections.append(
+                {
+                    "frame": int(_idx),
+                    "confidence": _d["confidence"],
+                    "length_px": _d["length_px"],
+                    "width_px": _d["width_px"],
+                    "method": "contour" if _d["contour_found"] else "bbox",
+                }
+            )
     _cap.release()
 
     if _all_detections:
@@ -541,7 +631,9 @@ def _(
         _fig, _axes = plt.subplots(1, 3, figsize=(14, 4))
 
         _counts = _df.groupby("frame").size()
-        _axes[0].bar(_counts.index, _counts.values, width=max(1, total_frames // 50))
+        _axes[0].bar(
+            _counts.index, _counts.values, width=max(1, total_frames // 50)
+        )
         _axes[0].set_xlabel("Frame")
         _axes[0].set_ylabel("Fish count")
         _axes[0].set_title("Detections per frame")
@@ -557,12 +649,259 @@ def _(
         _axes[2].set_title("Length vs Width")
 
         _fig.tight_layout()
-        mo.vstack([
-            mo.md(f"Sampled **{_sample_count}** frames, found **{len(_all_detections)}** total detections."),
-            _fig,
-        ])
+        mo.vstack(
+            [
+                mo.md(
+                    f"Sampled **{_sample_count}** frames, found **{len(_all_detections)}** total detections."
+                ),
+                _fig,
+            ]
+        )
     else:
         mo.md("*No detections found across sampled frames.*")
+    return
+
+
+@app.cell
+def _(mo):
+    image_upload = mo.ui.file(
+        filetypes=[".jpg", ".jpeg", ".png", ".bmp"],
+        label="Upload fish image",
+    )
+    mo.vstack(
+        [
+            mo.md("---"),
+            mo.md("## Image Upload & Error Analysis"),
+            mo.md(
+                "Upload an image to detect fish and optionally compare with known sizes."
+            ),
+            image_upload,
+        ]
+    )
+    return (image_upload,)
+
+
+@app.cell
+def _(cv2, image_upload, mo, np):
+    mo.stop(not image_upload.value, mo.md("*Upload an image above.*"))
+
+    _file = image_upload.value[0]
+    _arr = np.frombuffer(_file.contents, np.uint8)
+    uploaded_frame = cv2.imdecode(_arr, cv2.IMREAD_COLOR)
+    return (uploaded_frame,)
+
+
+@app.cell
+def _(ClickableImage, base64, cv2, mo, uploaded_frame):
+    _, _buf = cv2.imencode(".jpg", uploaded_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _data_url = (
+        "data:image/jpeg;base64," + base64.b64encode(_buf.tobytes()).decode()
+    )
+
+    upload_calibration_widget = mo.ui.anywidget(
+        ClickableImage(src=_data_url, points=[])
+    )
+    upload_ref_length_cm = mo.ui.number(
+        start=0.1,
+        stop=500.0,
+        step=0.1,
+        value=10.0,
+        label="Real-world distance (cm)",
+    )
+
+    mo.vstack(
+        [
+            mo.md("### Calibration — click two points on a reference object"),
+            mo.md(
+                "Click **Point A**, then **Point B** on the ends of a known-length object. Click again to reset."
+            ),
+            upload_calibration_widget,
+            upload_ref_length_cm,
+        ]
+    )
+    return upload_calibration_widget, upload_ref_length_cm
+
+
+@app.cell
+def _(mo, np, upload_calibration_widget, upload_ref_length_cm):
+    _points = upload_calibration_widget.value.get("points", [])
+
+    if len(_points) == 2:
+        _p1, _p2 = _points
+        _px_dist = float(np.sqrt((_p2[0] - _p1[0]) ** 2 + (_p2[1] - _p1[1]) ** 2))
+        upload_px_per_cm = (
+            _px_dist / upload_ref_length_cm.value
+            if upload_ref_length_cm.value > 0
+            else 1.0
+        )
+        mo.md(
+            f"**A** ({_p1[0]}, {_p1[1]}) → **B** ({_p2[0]}, {_p2[1]}): "
+            f"**{_px_dist:.1f} px** = **{upload_ref_length_cm.value:.1f} cm** → **{upload_px_per_cm:.2f} px/cm**"
+        )
+    else:
+        upload_px_per_cm = 1.0
+        mo.md("*Click two points on the image to calibrate.*")
+    return (upload_px_per_cm,)
+
+
+@app.cell
+def _(
+    canny_high_slider,
+    canny_low_slider,
+    conf_slider,
+    contour_area_slider,
+    detect_frame,
+    iou_slider,
+    padding_slider,
+    uploaded_frame,
+):
+    uploaded_detections = detect_frame(
+        uploaded_frame,
+        conf_thres=conf_slider.value,
+        iou_thres=iou_slider.value,
+        padding=int(padding_slider.value),
+        canny_low=int(canny_low_slider.value),
+        canny_high=int(canny_high_slider.value),
+        min_contour_ratio=contour_area_slider.value,
+    )
+    return (uploaded_detections,)
+
+
+@app.cell
+def _(
+    cv2,
+    frame_to_png_bytes,
+    mo,
+    upload_px_per_cm,
+    uploaded_detections,
+    uploaded_frame,
+):
+    _annotated = uploaded_frame.copy()
+    _scale = upload_px_per_cm
+    for _det in uploaded_detections:
+        _x1, _y1, _x2, _y2 = _det["bbox"]
+        _conf = _det["confidence"]
+        _length_cm = _det["length_px"] / _scale
+        _width_cm = _det["width_px"] / _scale
+        _rotated_rect = _det["rotated_rect"]
+
+        cv2.rectangle(_annotated, (_x1, _y1), (_x2, _y2), (0, 255, 0), 2)
+        if _rotated_rect is not None:
+            _box_points = cv2.boxPoints(_rotated_rect).astype("int32")
+            cv2.drawContours(_annotated, [_box_points], 0, (255, 255, 0), 2)
+
+        _method = "" if _det["contour_found"] else " (bbox)"
+        _label = f"Fish {_conf:.2f} | L:{_length_cm:.1f}cm W:{_width_cm:.1f}cm{_method}"
+        (_tw, _th), _ = cv2.getTextSize(_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        cv2.rectangle(
+            _annotated, (_x1, _y1 - _th - 8), (_x1 + _tw, _y1), (0, 255, 0), -1
+        )
+        cv2.putText(
+            _annotated,
+            _label,
+            (_x1, _y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            2,
+        )
+
+    mo.vstack(
+        [
+            mo.md(f"### Uploaded image — {len(uploaded_detections)} fish detected"),
+            mo.image(frame_to_png_bytes(_annotated)),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(mo, uploaded_detections):
+    actual_length_inputs = mo.ui.array(
+        [
+            mo.ui.number(
+                start=0, stop=500, step=0.1, value=0,
+                label=f"Fish {i + 1} length (cm)",
+            )
+            for i in range(len(uploaded_detections))
+        ]
+    )
+    actual_width_inputs = mo.ui.array(
+        [
+            mo.ui.number(
+                start=0, stop=500, step=0.1, value=0,
+                label=f"Fish {i + 1} width (cm)",
+            )
+            for i in range(len(uploaded_detections))
+        ]
+    )
+    mo.vstack(
+        [
+            mo.md("### Actual fish sizes (optional — enter to compare)"),
+            mo.md("Leave at 0 to skip."),
+            mo.hstack(
+                [
+                    mo.vstack([mo.md("**Lengths**"), actual_length_inputs]),
+                    mo.vstack([mo.md("**Widths**"), actual_width_inputs]),
+                ]
+            ),
+        ]
+    )
+    return actual_length_inputs, actual_width_inputs
+
+
+@app.cell
+def _(
+    actual_length_inputs,
+    actual_width_inputs,
+    mo,
+    pd,
+    upload_px_per_cm,
+    uploaded_detections,
+):
+    _scale = upload_px_per_cm
+    _rows = []
+    for _i, _d in enumerate(uploaded_detections):
+        _det_l = _d["length_px"] / _scale
+        _det_w = _d["width_px"] / _scale
+        _act_l = actual_length_inputs.value[_i]
+        _act_w = actual_width_inputs.value[_i]
+
+        _l_err = abs(_det_l - _act_l) if _act_l > 0 else None
+        _l_pct = (_l_err / _act_l * 100) if _act_l > 0 else None
+        _w_err = abs(_det_w - _act_w) if _act_w > 0 else None
+        _w_pct = (_w_err / _act_w * 100) if _act_w > 0 else None
+
+        _rows.append(
+            {
+                "Fish": _i + 1,
+                "Det. L (cm)": round(_det_l, 1),
+                "Act. L (cm)": round(_act_l, 1) if _act_l > 0 else "—",
+                "L error (cm)": round(_l_err, 2) if _l_err is not None else "—",
+                "L error (%)": round(_l_pct, 1) if _l_pct is not None else "—",
+                "Det. W (cm)": round(_det_w, 1),
+                "Act. W (cm)": round(_act_w, 1) if _act_w > 0 else "—",
+                "W error (cm)": round(_w_err, 2) if _w_err is not None else "—",
+                "W error (%)": round(_w_pct, 1) if _w_pct is not None else "—",
+                "Method": "contour" if _d["contour_found"] else "bbox",
+            }
+        )
+
+    _df = pd.DataFrame(_rows)
+    _with_actual = [r for r in _rows if isinstance(r.get("L error (%)"), float)]
+    if _with_actual:
+        _mean_l_err = sum(r["L error (%)"] for r in _with_actual) / len(_with_actual)
+        _summary = f"Mean length error: **{_mean_l_err:.1f}%** across {len(_with_actual)} fish with known sizes."
+    else:
+        _summary = "*Enter actual sizes above to see error metrics.*"
+
+    mo.vstack(
+        [
+            mo.md(f"### Size comparison (scale: {_scale:.2f} px/cm)"),
+            mo.ui.table(_df),
+            mo.md(_summary),
+        ]
+    )
     return
 
 

@@ -151,7 +151,7 @@ def draw_detections(frame, detections):
 
         # Rotated rectangle from contour analysis (cyan)
         if rotated_rect is not None:
-            box_points = cv2.boxPoints(rotated_rect).astype(int)
+            box_points = cv2.boxPoints(rotated_rect).astype(np.int32)
             cv2.drawContours(frame, [box_points], 0, (255, 255, 0), 2)
 
         # Label with both dimensions
