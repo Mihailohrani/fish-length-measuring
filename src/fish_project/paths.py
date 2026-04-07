@@ -9,7 +9,20 @@ VIDEOS_DIR = LOCAL_DATA_DIR / "videos"
 IMAGES_DIR = LOCAL_DATA_DIR / "images"
 UPLOADS_DIR = LOCAL_DATA_DIR / "uploads"
 
-DEFAULT_WEIGHTS_PATH = MODELS_DIR / "FishYolov7_tiny_ultralytics.onnx"
+YOLOV7_ONNX_PATH = MODELS_DIR / "FishYolov7_tiny_ultralytics.onnx"
+YOLO26_FISH_PT_PATH = MODELS_DIR / "fish-yolo26n.pt"
+
+DEFAULT_WEIGHTS_PATH = YOLOV7_ONNX_PATH
+
+
+def detector_weight_choices() -> dict[str, str]:
+    """Human-readable label → absolute path for weights that exist under ``data/models``."""
+    out: dict[str, str] = {}
+    if YOLOV7_ONNX_PATH.is_file():
+        out["YOLOv7 (ONNX, Ultralytics)"] = str(YOLOV7_ONNX_PATH.resolve())
+    if YOLO26_FISH_PT_PATH.is_file():
+        out["YOLO26n (fish, .pt)"] = str(YOLO26_FISH_PT_PATH.resolve())
+    return out
 
 
 def ensure_local_data_dirs() -> None:

@@ -47,14 +47,12 @@ def _():
     from fish_project import detect_frame as detect_frame_shared
     from fish_project import draw_detections, load_model
     from fish_project.paths import (
-        DEFAULT_WEIGHTS_PATH,
         ensure_local_data_dirs,
         get_default_image_browser_dir,
     )
 
     ensure_local_data_dirs()
     return (
-        DEFAULT_WEIGHTS_PATH,
         anywidget,
         base64,
         cv2,
@@ -235,15 +233,41 @@ def _(anywidget, traitlets):
 
 
 @app.cell
-def _(DEFAULT_WEIGHTS_PATH, load_model, mo):
+def _(mo):
+    from fish_project.paths import detector_weight_choices
+
+    _choices = detector_weight_choices()
     mo.stop(
-        not DEFAULT_WEIGHTS_PATH.exists(),
-        mo.md(f"*Model weights not found at `{DEFAULT_WEIGHTS_PATH}`.*"),
+        not _choices,
+        mo.md(
+            "*No detector weights found. Under `data/models/` add at least one of:*\n\n"
+            "- `FishYolov7_tiny_ultralytics.onnx`\n"
+            "- `fish-yolo26n.pt`"
+        ),
+    )
+    weight_selector = mo.ui.dropdown(
+        options=_choices,
+        value=next(iter(_choices.values())),
+        label="Detector model",
+    )
+    mo.vstack([mo.md("## Detector"), weight_selector])
+    return (weight_selector,)
+
+
+@app.cell
+def _(load_model, mo, weight_selector):
+    import torch
+    from pathlib import Path
+
+    _weights = Path(weight_selector.value)
+    mo.stop(
+        not _weights.is_file(),
+        mo.md(f"*Model weights not found at `{_weights}`.*"),
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_model(str(DEFAULT_WEIGHTS_PATH), device)
-    print(f"Model loaded on {device}")
+    model = load_model(str(_weights), device)
+    print(f"Loaded `{_weights.name}` on {device}")
     return device, model
 
 
