@@ -22,6 +22,7 @@ dependencies = [
     "python-lsp-ruff>=2.3.0",
     "python-lsp-server>=1.14.0",
     "ruff>=0.15.5",
+    "setuptools>=82.0.1",
     "torch>=2.10.0",
     "torchvision>=0.22.0",
     "ultralytics>=8.3.0",
@@ -29,10 +30,13 @@ dependencies = [
 ]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+upgrade = true
 
 [tool.marimo.runtime]
 watcher_on_save = "autorun"

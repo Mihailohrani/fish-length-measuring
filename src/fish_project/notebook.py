@@ -1,12 +1,10 @@
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.22.5"
 app = marimo.App(width="medium")
 
 with app.setup:
     import warnings
-
-    import torch
 
     warnings.filterwarnings(
         "ignore",
@@ -27,8 +25,9 @@ def _(mo):
     mo.md("""
     # Fish Detection & Measurement
 
-    Choose one image, review the detections, and optionally enable advanced
-    measurement tools for calibration and size comparison.
+    In **Result**, pick **YOLOv7** or **YOLO26** when both weights are installed.
+    Then choose an image, review detections, and optionally use calibration and
+    size comparison.
     """)
     return
 
@@ -47,18 +46,20 @@ def _():
     from fish_project import detect_frame as detect_frame_shared
     from fish_project import draw_detections, load_model
     from fish_project.paths import (
+        DOWNSAMPLED_IMAGES_DIR,
+        ORIGINAL_IMAGES_DIR,
         ensure_local_data_dirs,
-        get_default_image_browser_dir,
     )
 
     ensure_local_data_dirs()
     return (
+        DOWNSAMPLED_IMAGES_DIR,
+        ORIGINAL_IMAGES_DIR,
         anywidget,
         base64,
         cv2,
         detect_frame_shared,
         draw_detections,
-        get_default_image_browser_dir,
         load_model,
         np,
         pd,
@@ -95,11 +96,10 @@ def _(anywidget, traitlets):
             btnMinus.textContent = '−'; btnMinus.style.cssText = btnStyle;
             const btnReset = document.createElement('button');
             btnReset.textContent = '⌂'; btnReset.style.cssText = btnStyle + ';font-size:16px';
-            btnReset.title = 'Reset zoom';
+            btnReset.title = 'Reset zoom & pan';
             controls.append(btnPlus, btnMinus, btnReset);
 
             let zoom = 1, panX = 0, panY = 0;
-            let dragging = false, dragX = 0, dragY = 0, panX0 = 0, panY0 = 0;
 
             img.onload = () => {
                 canvas.width = img.naturalWidth;
@@ -170,42 +170,42 @@ def _(anywidget, traitlets):
                 }
             }
 
+            function panBy(dx, dy) {
+                panX += dx;
+                panY += dy;
+                redraw();
+            }
+
+            const panPad = document.createElement('div');
+            panPad.style.cssText = 'position:absolute;bottom:8px;right:8px;display:flex;flex-direction:column;align-items:center;gap:4px;z-index:10';
+            const panStyle = btnStyle.replace('32px', '36px') + ';font-size:16px;line-height:1';
+            const mkPanBtn = (label, title, dx, dy) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.style.cssText = panStyle;
+                b.title = title;
+                b.addEventListener('click', (ev) => { ev.stopPropagation(); panBy(dx, dy); });
+                return b;
+            };
+            const PAN_STEP = 48;
+            const panRow = document.createElement('div');
+            panRow.style.cssText = 'display:flex;flex-direction:row;gap:4px';
+            panRow.append(
+                mkPanBtn('\\u2190', 'Pan left', PAN_STEP, 0),
+                mkPanBtn('\\u2192', 'Pan right', -PAN_STEP, 0),
+            );
+            panPad.append(
+                mkPanBtn('\\u2191', 'Pan up', 0, PAN_STEP),
+                panRow,
+                mkPanBtn('\\u2193', 'Pan down', 0, -PAN_STEP),
+            );
+
             btnPlus.addEventListener('click', (e) => { e.stopPropagation(); applyZoom(1.3); });
             btnMinus.addEventListener('click', (e) => { e.stopPropagation(); applyZoom(1 / 1.3); });
             btnReset.addEventListener('click', (e) => { e.stopPropagation(); zoom = 1; panX = 0; panY = 0; redraw(); });
 
-            canvas.addEventListener('wheel', (e) => {
-                e.preventDefault();
-                const { sx, sy } = toImage(e);
-                const prev = zoom;
-                zoom = Math.max(0.5, Math.min(20, zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
-                panX = sx - (sx - panX) * (zoom / prev);
-                panY = sy - (sy - panY) * (zoom / prev);
-                redraw();
-            }, { passive: false });
-
-            canvas.addEventListener('mousedown', (e) => {
-                const { sx, sy } = toImage(e);
-                dragX = sx; dragY = sy;
-                panX0 = panX; panY0 = panY;
-                dragging = false;
-            });
-
-            canvas.addEventListener('mousemove', (e) => {
-                if (e.buttons !== 1) return;
-                const { sx, sy } = toImage(e);
-                if (Math.abs(sx - dragX) > 3 || Math.abs(sy - dragY) > 3) dragging = true;
-                if (dragging) {
-                    canvas.style.cursor = 'grabbing';
-                    panX = panX0 + (sx - dragX);
-                    panY = panY0 + (sy - dragY);
-                    redraw();
-                }
-            });
-
-            canvas.addEventListener('mouseup', (e) => {
-                canvas.style.cursor = 'crosshair';
-                if (dragging) { dragging = false; return; }
+            canvas.addEventListener('click', (e) => {
                 const { ix, iy } = toImage(e);
                 let points = model.get('points');
                 points = points.length >= 2 ? [[ix, iy]] : [...points, [ix, iy]];
@@ -220,7 +220,7 @@ def _(anywidget, traitlets):
             });
             model.on('change:points', redraw);
 
-            wrap.append(canvas, controls);
+            wrap.append(canvas, controls, panPad);
             el.appendChild(wrap);
         }
         export default { render };
@@ -230,45 +230,6 @@ def _(anywidget, traitlets):
         points = traitlets.List([]).tag(sync=True)
 
     return (ClickableImage,)
-
-
-@app.cell
-def _(mo):
-    from fish_project.paths import detector_weight_choices
-
-    _choices = detector_weight_choices()
-    mo.stop(
-        not _choices,
-        mo.md(
-            "*No detector weights found. Under `data/models/` add at least one of:*\n\n"
-            "- `FishYolov7_tiny_ultralytics.onnx`\n"
-            "- `fish-yolo26n.pt`"
-        ),
-    )
-    weight_selector = mo.ui.dropdown(
-        options=_choices,
-        value=next(iter(_choices.values())),
-        label="Detector model",
-    )
-    mo.vstack([mo.md("## Detector"), weight_selector])
-    return (weight_selector,)
-
-
-@app.cell
-def _(load_model, mo, weight_selector):
-    import torch
-    from pathlib import Path
-
-    _weights = Path(weight_selector.value)
-    mo.stop(
-        not _weights.is_file(),
-        mo.md(f"*Model weights not found at `{_weights}`.*"),
-    )
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_model(str(_weights), device)
-    print(f"Loaded `{_weights.name}` on {device}")
-    return device, model
 
 
 @app.cell
@@ -306,46 +267,68 @@ def _(base64, cv2, pd):
 
 
 @app.cell
-def _(get_default_image_browser_dir, mo):
+def _(DOWNSAMPLED_IMAGES_DIR, ORIGINAL_IMAGES_DIR, mo):
     image_source = mo.ui.dropdown(
-        options={"Sample library": "sample", "Upload": "upload"},
-        value="Sample library",
+        options={
+            "Original": "original",
+            "Downscaled": "downsampled",
+            "Upload": "upload",
+        },
+        value="Original",
         label="Image source",
     )
-    sample_browser = mo.ui.file_browser(
-        initial_path=get_default_image_browser_dir(),
+    sample_browser_original = mo.ui.file_browser(
+        initial_path=ORIGINAL_IMAGES_DIR,
         filetypes=[".jpg", ".jpeg", ".png", ".bmp"],
         selection_mode="file",
         multiple=False,
         restrict_navigation=True,
         ignore_empty_dirs=True,
-        label="Sample image",
+        label="Original image",
+    )
+    sample_browser_downscaled = mo.ui.file_browser(
+        initial_path=DOWNSAMPLED_IMAGES_DIR,
+        filetypes=[".jpg", ".jpeg", ".png", ".bmp"],
+        selection_mode="file",
+        multiple=False,
+        restrict_navigation=True,
+        ignore_empty_dirs=True,
+        label="Downscaled image",
     )
     image_upload = mo.ui.file(
         filetypes=[".jpg", ".jpeg", ".png", ".bmp"],
         label="Upload image",
     )
-    return image_source, image_upload, sample_browser
+    return (
+        image_source,
+        image_upload,
+        sample_browser_downscaled,
+        sample_browser_original,
+    )
 
 
 @app.cell
 def _(
+    DOWNSAMPLED_IMAGES_DIR,
+    ORIGINAL_IMAGES_DIR,
     cv2,
     frame_to_image_bytes,
-    get_default_image_browser_dir,
     image_source,
     image_upload,
     mo,
     np,
-    sample_browser,
+    sample_browser_downscaled,
+    sample_browser_original,
 ):
-    _sample_root = get_default_image_browser_dir()
-    _active_control = sample_browser if image_source.value == "sample" else image_upload
-    _source_note = (
-        mo.md(f"Sample library root: `{_sample_root}`")
-        if image_source.value == "sample"
-        else mo.md("Upload a single image from your machine.")
-    )
+    if image_source.value == "original":
+        _active_control = sample_browser_original
+        _source_note = mo.md(f"Library root: `{ORIGINAL_IMAGES_DIR}`")
+    elif image_source.value == "downsampled":
+        _active_control = sample_browser_downscaled
+        _source_note = mo.md(f"Library root: `{DOWNSAMPLED_IMAGES_DIR}`")
+    else:
+        _active_control = image_upload
+        _source_note = mo.md("Upload a single image from your machine.")
 
     _picker = mo.vstack(
         [
@@ -356,23 +339,30 @@ def _(
         ]
     )
 
-    if image_source.value == "sample":
-        mo.stop(
-            not sample_browser.value,
-            _picker,
-        )
-        _sample_file = sample_browser.value[0]
-        _sample_path = _sample_file.path
-        selected_image = cv2.imread(str(_sample_path))
-        selected_image_name = _sample_path.name
-        selected_image_origin = f"Sample library ({_sample_path.parent.name})"
-    else:
+    if image_source.value == "upload":
         mo.stop(not image_upload.value, _picker)
         _uploaded_file = image_upload.value[0]
         _image_buffer = np.frombuffer(_uploaded_file.contents, np.uint8)
         selected_image = cv2.imdecode(_image_buffer, cv2.IMREAD_COLOR)
         selected_image_name = _uploaded_file.name
         selected_image_origin = "Upload"
+    else:
+        _browser = (
+            sample_browser_original
+            if image_source.value == "original"
+            else sample_browser_downscaled
+        )
+        mo.stop(
+            not _browser.value,
+            _picker,
+        )
+        _sample_file = _browser.value[0]
+        _sample_path = _sample_file.path
+        selected_image = cv2.imread(str(_sample_path))
+        selected_image_name = _sample_path.name
+        selected_image_origin = (
+            "Original" if image_source.value == "original" else "Downscaled"
+        )
 
     mo.stop(selected_image is None, _picker)
 
@@ -472,73 +462,6 @@ def _(mo):
 
 
 @app.cell
-def _(detect_frame_shared, device, model):
-    def detect_frame(
-        frame,
-        conf_thres,
-        iou_thres,
-        padding,
-        canny_low,
-        canny_high,
-        min_contour_ratio,
-        img_size=640,
-        use_clahe=False,
-        clahe_clip=2.0,
-        use_bilateral=False,
-        bilateral_sigma=50,
-    ):
-        return detect_frame_shared(
-            model,
-            frame,
-            device,
-            img_size=img_size,
-            conf_thres=conf_thres,
-            iou_thres=iou_thres,
-            padding=padding,
-            canny_low=canny_low,
-            canny_high=canny_high,
-            min_contour_ratio=min_contour_ratio,
-            use_clahe=use_clahe,
-            clahe_clip=clahe_clip,
-            use_bilateral=use_bilateral,
-            bilateral_sigma=bilateral_sigma,
-        )
-
-    return (detect_frame,)
-
-
-@app.cell
-def _(
-    bilateral_sigma_slider,
-    canny_high_slider,
-    canny_low_slider,
-    clahe_clip_slider,
-    conf_slider,
-    contour_area_slider,
-    detect_frame,
-    iou_slider,
-    padding_slider,
-    selected_image,
-    use_bilateral_switch,
-    use_clahe_switch,
-):
-    detections = detect_frame(
-        selected_image,
-        conf_thres=conf_slider.value,
-        iou_thres=iou_slider.value,
-        padding=int(padding_slider.value),
-        canny_low=int(canny_low_slider.value),
-        canny_high=int(canny_high_slider.value),
-        min_contour_ratio=contour_area_slider.value,
-        use_clahe=use_clahe_switch.value,
-        clahe_clip=clahe_clip_slider.value,
-        use_bilateral=use_bilateral_switch.value,
-        bilateral_sigma=int(bilateral_sigma_slider.value),
-    )
-    return (detections,)
-
-
-@app.cell
 def _(ClickableImage, frame_to_data_url, mo, selected_image):
     calibration_widget = mo.ui.anywidget(
         ClickableImage(src=frame_to_data_url(selected_image), points=[])
@@ -555,7 +478,8 @@ def _(ClickableImage, frame_to_data_url, mo, selected_image):
         [
             mo.md("## Calibration"),
             mo.md(
-                "Click **Point A**, then **Point B** on the image to calibrate from pixels to centimeters. Click again to reset."
+                "Click **Point A**, then **Point B** on the image to calibrate from pixels to centimeters. "
+                "Zoom with **+ / −**; mouse wheel scrolls the page. When zoomed, use the **arrow buttons** to pan. Click again to reset points."
             ),
             calibration_widget,
             ref_length_cm,
@@ -592,6 +516,27 @@ def _(calibration_widget, mo, np, ref_length_cm):
 
 
 @app.cell
+def _(mo):
+    from fish_project.paths import detector_weight_choices
+
+    _choices = detector_weight_choices()
+    mo.stop(
+        not _choices,
+        mo.md(
+            "*No detector weights found. Under `data/models/` add at least one of:*\n\n"
+            "- `FishYolov7_tiny_ultralytics.onnx`\n"
+            "- `fish-yolo26n.pt`"
+        ),
+    )
+    weight_selector = mo.ui.dropdown(
+        options=_choices,
+        value=next(iter(_choices.keys())),
+        label="Detector model",
+    )
+    return (weight_selector,)
+
+
+@app.cell
 def _(
     bilateral_sigma_slider,
     canny_high_slider,
@@ -599,10 +544,11 @@ def _(
     clahe_clip_slider,
     conf_slider,
     contour_area_slider,
-    detections,
+    detect_frame_shared,
     draw_detections,
     frame_to_image_bytes,
     iou_slider,
+    load_model,
     mo,
     padding_slider,
     px_per_cm,
@@ -611,7 +557,37 @@ def _(
     selected_image_origin,
     use_bilateral_switch,
     use_clahe_switch,
+    weight_selector,
 ):
+    import torch
+    from pathlib import Path
+
+    _weights = Path(weight_selector.value)
+    mo.stop(
+        not _weights.is_file(),
+        mo.md(f"*Model weights not found at `{_weights}`.*"),
+    )
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = load_model(str(_weights), device)
+    print(f"Loaded `{_weights.name}` on {device}")
+
+    detections = detect_frame_shared(
+        model,
+        selected_image,
+        device,
+        img_size=640,
+        conf_thres=conf_slider.value,
+        iou_thres=iou_slider.value,
+        padding=int(padding_slider.value),
+        canny_low=int(canny_low_slider.value),
+        canny_high=int(canny_high_slider.value),
+        min_contour_ratio=contour_area_slider.value,
+        use_clahe=use_clahe_switch.value,
+        clahe_clip=clahe_clip_slider.value,
+        use_bilateral=use_bilateral_switch.value,
+        bilateral_sigma=int(bilateral_sigma_slider.value),
+    )
     _annotated = draw_detections(
         selected_image.copy(),
         detections,
@@ -623,6 +599,14 @@ def _(
     mo.vstack(
         [
             mo.md("## Result"),
+            mo.hstack(
+                [
+                    mo.md("**Detector model:**"),
+                    weight_selector,
+                ],
+                align="center",
+                gap=0.75,
+            ),
             mo.md(f"**{selected_image_name}** from **{selected_image_origin}**"),
             mo.md(
                 f"Detected **{len(detections)}** fish. Labels are shown in **{_unit_text}**."
@@ -637,7 +621,7 @@ def _(
             mo.hstack([use_bilateral_switch, bilateral_sigma_slider]),
         ]
     )
-    return
+    return (detections,)
 
 
 @app.cell
@@ -693,9 +677,11 @@ def _(cv2, detections, mo, padding_slider, plt, selected_image):
             _axes[1, _col].axis("off")
 
         _fig.tight_layout()
-        mo.vstack([mo.md("## Edge Detail"), _fig])
+        _edge_detail = mo.vstack([mo.md("## Edge Detail"), _fig])
     else:
-        mo.md("*No contour edges to display for this image.*")
+        _edge_detail = mo.md("*No contour edges to display for this image.*")
+
+    _edge_detail
     return
 
 
