@@ -33,13 +33,13 @@ Open `http://localhost:2718`.
 
 ## How It Works
 
-1. **Detection** -- YOLO models (`YOLOv7` ONNX or `YOLO26` PyTorch) locate fish in the frame.
-2. **Measurement** -- Each bounding box is cropped, edge-detected (Canny), and the largest contour is fit with a
+1. **Detection** — YOLO models (`YOLOv7` ONNX or `YOLO26` PyTorch) locate fish in the frame.
+2. **Measurement** — Each bounding box is cropped, edge-detected (Canny), and the largest contour is fit with a
    minimum-area rotated rectangle to extract length and width in pixels.
-3. **Calibration** -- Click two reference points of known distance on the image to convert pixel measurements to
+3. **Calibration** — Click two reference points of known distance on the image to convert pixel measurements to
    centimeters.
-4. **Comparison** -- Enter actual fish sizes to see measurement error percentages.
-5. **Depth measurement** -- For depth-only `.bag` files (no color stream), click two points on the depth heat map
+4. **Comparison** — Enter actual fish sizes to see measurement error percentages.
+5. **Depth measurement** — For depth-only `.bag` files (no color stream), click two points on the depth heat map
    to get a real-world distance in cm computed from camera intrinsics and raw depth values.
 
 Supported input sources: still images (original, downsampled, or uploaded), video files (`.mp4`),
