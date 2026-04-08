@@ -1,16 +1,16 @@
 # Tools: mise install
-# Data blobs: mise run fetch-data  →  uv sync; git lfs install; git lfs pull
+# Setup: mise run setup  →  uv sync; git lfs install; git lfs pull
 
 [tools]
 uv = "latest"
 git-lfs = "latest"
 
-[tasks."fetch-data"]
+[tasks.setup]
 description = "Install Python deps and pull Git LFS assets"
 run = ["uv sync", "git lfs install", "git lfs pull"]
 
 [tasks.prod]
-run = 'uv run marimo run --headless --watch src/fish_project/notebook.py'
+run = 'uv run marimo run --headless src/fish_project/notebook.py'
 
 [tasks.dev]
 run = 'uv run marimo edit --headless --mcp --no-token src/fish_project/notebook.py'

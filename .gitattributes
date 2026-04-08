@@ -4,4 +4,3 @@ data/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
 data/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 data/**/*.png filter=lfs diff=lfs merge=lfs -text
 data/**/*.bag filter=lfs diff=lfs merge=lfs -text
-data/images/downsampled/*.jpg filter=lfs diff=lfs merge=lfs -text
