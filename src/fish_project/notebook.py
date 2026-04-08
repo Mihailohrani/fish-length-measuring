@@ -4,7 +4,10 @@ __generated_with = "0.23.0"
 app = marimo.App(width="medium")
 
 with app.setup:
+    import os
     import warnings
+
+    os.environ["YOLO_VERBOSE"] = "False"
 
     warnings.filterwarnings(
         "ignore",
@@ -25,6 +28,41 @@ def _(mo):
     mo.md("""
     # Fish Detection & Measurement
     """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.sidebar(
+        [
+            mo.md("## Reference Data"),
+            mo.md(
+                "### Cage\n\n"
+                "| | cm |\n"
+                "|---|---|\n"
+                "| Opening width | 76 |\n"
+                "| Opening height | 35.8 |\n"
+                "| Depth | 30 |\n"
+                "| Height | 44.5 |"
+            ),
+            mo.md(
+                "### Fish (blue)\n\n"
+                "| | cm |\n"
+                "|---|---|\n"
+                "| Length | 65 |\n"
+                "| Tail-fin | 37.5 |\n"
+                "| Height | 20 |"
+            ),
+            mo.md(
+                "### Fish (green)\n\n"
+                "| | cm |\n"
+                "|---|---|\n"
+                "| Length | 65 |\n"
+                "| Tail-fin | 37.5 |\n"
+                "| Height | 23.5 |"
+            ),
+        ]
+    )
     return
 
 
@@ -757,7 +795,6 @@ def _(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(str(_weights), device)
-    print(f"Loaded `{_weights.name}` on {device}")
 
     detections = detect_frame_shared(
         model,
