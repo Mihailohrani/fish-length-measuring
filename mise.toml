@@ -1,6 +1,3 @@
-# Tools: mise install
-# Setup: mise run setup  →  uv sync; git lfs install; git lfs pull
-
 [tools]
 uv = "latest"
 git-lfs = "latest"
