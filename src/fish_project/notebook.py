@@ -575,16 +575,24 @@ def _(ClickableImage, depth_only_bag, frame_to_data_url, mo, selected_image):
         value=10.0,
         label="Real-world distance (cm)",
     )
+    actual_distance_cm = mo.ui.number(
+        start=0,
+        stop=500.0,
+        step=0.1,
+        value=65,
+        label="Actual distance (cm)",
+    )
 
     if depth_only_bag:
         _output = mo.vstack(
             [
                 mo.md("## Distance Measurement"),
                 mo.md(
-                    "Click **Point A**, then **Point B** on the depth image to measure pixel distance. "
+                    "Click **Point A**, then **Point B** on the depth image to measure distance. "
                     "Zoom with **+ / −**; use the **arrow buttons** to pan. Click again to reset points."
                 ),
                 calibration_widget,
+                actual_distance_cm,
             ]
         )
     else:
@@ -600,11 +608,12 @@ def _(ClickableImage, depth_only_bag, frame_to_data_url, mo, selected_image):
             ]
         )
     _output
-    return calibration_widget, ref_length_cm
+    return actual_distance_cm, calibration_widget, ref_length_cm
 
 
 @app.cell
 def _(
+    actual_distance_cm,
     bag_browser,
     bag_intrinsics,
     calibration_widget,
@@ -652,6 +661,15 @@ def _(
                     _result += f": **{_dist_cm:.1f} cm**"
                     if _d1 == 0 or _d2 == 0:
                         _result += " *(warning: one or both points have zero depth)*"
+                    elif actual_distance_cm.value > 0:
+                        _err = abs(_dist_cm - actual_distance_cm.value)
+                        _err_pct = _err / actual_distance_cm.value * 100
+                        _result += (
+                            f"\n\n| | Depth | Actual | Error |\n"
+                            f"|---|---|---|---|\n"
+                            f"| Distance | {_dist_cm:.1f} cm | {actual_distance_cm.value:.1f} cm "
+                            f"| {_err:.1f} cm ({_err_pct:.1f}%) |"
+                        )
 
             mo.output.replace(mo.md(_result))
         else:
