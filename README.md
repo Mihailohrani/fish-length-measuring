@@ -22,15 +22,6 @@ mise run prod         # opens the notebook in your browser
 
 `mise run dev` starts the notebook in edit mode with MCP support.
 
-## Docker
-
-```bash
-docker build -t fish-length .
-docker run --rm -p 2718:2718 fish-length
-```
-
-Open `http://localhost:2718`.
-
 ## How It Works
 
 1. **Detection** — YOLO models (`YOLOv7` ONNX or `YOLO26` PyTorch) locate fish in the frame.

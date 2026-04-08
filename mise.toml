@@ -11,7 +11,3 @@ run = 'uv run marimo run src/fish_project/notebook.py'
 
 [tasks.dev]
 run = 'uv run marimo edit --headless --mcp --no-token src/fish_project/notebook.py'
-
-[tasks.ci]
-hide = true
-run = 'docker build -t fish-length .'
