@@ -35,6 +35,10 @@ Open `http://localhost:2718`.
    centimeters.
 4. **Comparison** -- Enter actual fish sizes to see measurement error percentages.
 
+Supported input sources: still images (original, downsampled, or uploaded), video files (`.mp4`),
+and ROS 1 bag files (`.bag`, e.g. Intel RealSense recordings). Video and bag sources include a
+frame slider for scrubbing through frames.
+
 ## Project Structure
 
 ```
@@ -44,6 +48,7 @@ src/fish_project/
     measurement.py    Contour-based length/width extraction
     visualization.py  Bounding box and annotation drawing
     model.py          Model loading (Ultralytics)
+    bag_reader.py     ROS 1 .bag frame extraction
     paths.py          Data directory conventions
 data/
     models/           Detector weights (.onnx, .pt)  [LFS]

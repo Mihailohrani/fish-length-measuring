@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.22.5"
+__generated_with = "0.23.0"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -47,14 +47,18 @@ def _():
     from fish_project import draw_detections, load_model
     from fish_project.paths import (
         DOWNSAMPLED_IMAGES_DIR,
+        LOCAL_DATA_DIR,
         ORIGINAL_IMAGES_DIR,
+        VIDEOS_DIR,
         ensure_local_data_dirs,
     )
 
     ensure_local_data_dirs()
     return (
         DOWNSAMPLED_IMAGES_DIR,
+        LOCAL_DATA_DIR,
         ORIGINAL_IMAGES_DIR,
+        VIDEOS_DIR,
         anywidget,
         base64,
         cv2,
@@ -267,12 +271,20 @@ def _(base64, cv2, pd):
 
 
 @app.cell
-def _(DOWNSAMPLED_IMAGES_DIR, ORIGINAL_IMAGES_DIR, mo):
+def _(
+    DOWNSAMPLED_IMAGES_DIR,
+    LOCAL_DATA_DIR,
+    ORIGINAL_IMAGES_DIR,
+    VIDEOS_DIR,
+    mo,
+):
     image_source = mo.ui.dropdown(
         options={
             "Original": "original",
             "Downscaled": "downsampled",
             "Upload": "upload",
+            "Video": "video",
+            "Bag": "bag",
         },
         value="Original",
         label="Image source",
@@ -299,19 +311,76 @@ def _(DOWNSAMPLED_IMAGES_DIR, ORIGINAL_IMAGES_DIR, mo):
         filetypes=[".jpg", ".jpeg", ".png", ".bmp"],
         label="Upload image",
     )
+    video_browser = mo.ui.file_browser(
+        initial_path=VIDEOS_DIR,
+        filetypes=[".mp4", ".avi", ".mov"],
+        selection_mode="file",
+        multiple=False,
+        restrict_navigation=True,
+        ignore_empty_dirs=True,
+        label="Video file",
+    )
+    bag_browser = mo.ui.file_browser(
+        initial_path=LOCAL_DATA_DIR,
+        filetypes=[".bag"],
+        selection_mode="file",
+        multiple=False,
+        restrict_navigation=True,
+        ignore_empty_dirs=True,
+        label="Bag file",
+    )
     return (
+        bag_browser,
         image_source,
         image_upload,
         sample_browser_downscaled,
         sample_browser_original,
+        video_browser,
     )
+
+
+@app.cell
+def _(bag_browser, cv2, image_source, mo, video_browser):
+    frame_selector = None
+
+    if image_source.value == "video" and video_browser.value:
+        _path = str(video_browser.value[0].path)
+        _cap = cv2.VideoCapture(_path)
+        _total = int(_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        _fps = _cap.get(cv2.CAP_PROP_FPS)
+        _cap.release()
+        if _total > 0:
+            frame_selector = mo.ui.slider(
+                start=0,
+                stop=_total - 1,
+                step=1,
+                value=0,
+                label=f"Frame (of {_total}, {_fps:.1f} fps)",
+            )
+    elif image_source.value == "bag" and bag_browser.value:
+        from fish_project.bag_reader import count_bag_frames
+
+        _total = count_bag_frames(str(bag_browser.value[0].path))
+        if _total > 0:
+            frame_selector = mo.ui.slider(
+                start=0,
+                stop=_total - 1,
+                step=1,
+                value=0,
+                label=f"Frame (of {_total})",
+            )
+    return (frame_selector,)
 
 
 @app.cell
 def _(
     DOWNSAMPLED_IMAGES_DIR,
+    LOCAL_DATA_DIR,
     ORIGINAL_IMAGES_DIR,
+    VIDEOS_DIR,
+    bag_browser,
     cv2,
+    frame_selector,
     frame_to_image_bytes,
     image_source,
     image_upload,
@@ -319,6 +388,7 @@ def _(
     np,
     sample_browser_downscaled,
     sample_browser_original,
+    video_browser,
 ):
     if image_source.value == "original":
         _active_control = sample_browser_original
@@ -326,18 +396,25 @@ def _(
     elif image_source.value == "downsampled":
         _active_control = sample_browser_downscaled
         _source_note = mo.md(f"Library root: `{DOWNSAMPLED_IMAGES_DIR}`")
+    elif image_source.value == "video":
+        _active_control = video_browser
+        _source_note = mo.md(f"Library root: `{VIDEOS_DIR}`")
+    elif image_source.value == "bag":
+        _active_control = bag_browser
+        _source_note = mo.md(f"Library root: `{LOCAL_DATA_DIR}`")
     else:
         _active_control = image_upload
         _source_note = mo.md("Upload a single image from your machine.")
 
-    _picker = mo.vstack(
-        [
-            mo.md("## Choose Image"),
-            image_source,
-            _source_note,
-            _active_control,
-        ]
-    )
+    _picker_items = [
+        mo.md("## Choose Image"),
+        image_source,
+        _source_note,
+        _active_control,
+    ]
+    if frame_selector is not None and image_source.value in ("video", "bag"):
+        _picker_items.append(frame_selector)
+    _picker = mo.vstack(_picker_items)
 
     if image_source.value == "upload":
         mo.stop(not image_upload.value, _picker)
@@ -346,6 +423,28 @@ def _(
         selected_image = cv2.imdecode(_image_buffer, cv2.IMREAD_COLOR)
         selected_image_name = _uploaded_file.name
         selected_image_origin = "Upload"
+    elif image_source.value == "video":
+        mo.stop(not video_browser.value, _picker)
+        mo.stop(frame_selector is None, _picker)
+        _video_path = str(video_browser.value[0].path)
+        _cap = cv2.VideoCapture(_video_path)
+        _cap.set(cv2.CAP_PROP_POS_FRAMES, frame_selector.value)
+        _ret, selected_image = _cap.read()
+        _cap.release()
+        mo.stop(not _ret, _picker)
+        selected_image_name = f"{video_browser.value[0].path.name} frame {frame_selector.value}"
+        selected_image_origin = "Video"
+    elif image_source.value == "bag":
+        mo.stop(not bag_browser.value, _picker)
+        mo.stop(frame_selector is None, _picker)
+        from fish_project.bag_reader import extract_frame
+
+        selected_image = extract_frame(
+            str(bag_browser.value[0].path), frame_selector.value
+        )
+        mo.stop(selected_image is None, _picker)
+        selected_image_name = f"{bag_browser.value[0].path.name} frame {frame_selector.value}"
+        selected_image_origin = "Bag"
     else:
         _browser = (
             sample_browser_original
