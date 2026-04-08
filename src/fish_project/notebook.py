@@ -24,10 +24,6 @@ def _():
 def _(mo):
     mo.md("""
     # Fish Detection & Measurement
-
-    In **Result**, pick **YOLOv7** or **YOLO26** when both weights are installed.
-    Then choose an image, review detections, and optionally use calibration and
-    size comparison.
     """)
     return
 
@@ -277,12 +273,12 @@ def _(BAGS_DIR, DOWNSAMPLED_IMAGES_DIR, ORIGINAL_IMAGES_DIR, VIDEOS_DIR, mo):
         options={
             "Original": "original",
             "Downscaled": "downsampled",
-            "Upload": "upload",
             "Video": "video",
             "Bag": "bag",
+            "Upload": "upload",
         },
         value="Original",
-        label="Image source",
+        label="Media source",
     )
     sample_browser_original = mo.ui.file_browser(
         initial_path=ORIGINAL_IMAGES_DIR,
@@ -410,7 +406,7 @@ def _(
         _source_note = mo.md("Upload a single image from your machine.")
 
     _picker_items = [
-        mo.md("## Choose Image"),
+        mo.md("## Choose Media"),
         image_source,
         _source_note,
         _active_control,
@@ -473,7 +469,7 @@ def _(
             _picker,
             mo.vstack(
                 [
-                    mo.md("## Selected Image"),
+                    mo.md("## Selected Media"),
                     mo.md(f"**{selected_image_name}** from **{selected_image_origin}**"),
                     mo.image(frame_to_image_bytes(selected_image)),
                 ]
