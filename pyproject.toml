@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fish-project"
+version = "0.1.0"
+description = "Fish detection and measurement via Ultralytics ONNX inference"
+requires-python = ">=3.14"
+dependencies = [
+    "anywidget>=0.9.21",
+    "marimo[mcp]>=0.20.4",
+    "matplotlib>=3.7.0",
+    "mcp>=1",
+    "nbformat>=5.10.4",
+    "numpy>=1.24.0",
+    "onnx>=1.16.0",
+    "onnxruntime>=1.19.0",
+    "opencv-python>=4.8.0",
+    "pandas>=2.0.0",
+    "pytest>=9.0.2",
+    "python-lsp-ruff>=2.3.0",
+    "python-lsp-server>=1.14.0",
+    "ruff>=0.15.5",
+    "torch>=2.10.0",
+    "torchvision>=0.22.0",
+    "ultralytics>=8.3.0",
+    "websockets>=16.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.marimo.runtime]
+watcher_on_save = "autorun"

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+__marimo__/
+.git/
+.gitignore
+.idea/
+.claude/
+.DS_Store
+*.pyc
+overleaf/
+computervision_project.zip
