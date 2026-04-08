@@ -137,8 +137,9 @@ def _(anywidget, traitlets):
                 ctx.drawImage(img, 0, 0);
 
                 const points = model.get('points');
-                const s = Math.max(img.naturalHeight / 1200, 1);
-                const r = 8 * s / zoom, lw = 2 * s / zoom, fs = Math.round(14 * s / zoom);
+                const rect = canvas.getBoundingClientRect();
+                const s = Math.max(canvas.width / rect.width, 1);
+                const r = 8 * s / zoom, lw = 3 * s / zoom, fs = Math.round(16 * s / zoom);
                 points.forEach(([x, y], i) => {
                     ctx.beginPath();
                     ctx.arc(x, y, r, 0, 2 * Math.PI);
