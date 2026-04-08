@@ -46,8 +46,8 @@ def _():
     from fish_project import detect_frame as detect_frame_shared
     from fish_project import draw_detections, load_model
     from fish_project.paths import (
+        BAGS_DIR,
         DOWNSAMPLED_IMAGES_DIR,
-        LOCAL_DATA_DIR,
         ORIGINAL_IMAGES_DIR,
         VIDEOS_DIR,
         ensure_local_data_dirs,
@@ -55,8 +55,8 @@ def _():
 
     ensure_local_data_dirs()
     return (
+        BAGS_DIR,
         DOWNSAMPLED_IMAGES_DIR,
-        LOCAL_DATA_DIR,
         ORIGINAL_IMAGES_DIR,
         VIDEOS_DIR,
         anywidget,
@@ -271,13 +271,7 @@ def _(base64, cv2, pd):
 
 
 @app.cell
-def _(
-    DOWNSAMPLED_IMAGES_DIR,
-    LOCAL_DATA_DIR,
-    ORIGINAL_IMAGES_DIR,
-    VIDEOS_DIR,
-    mo,
-):
+def _(BAGS_DIR, DOWNSAMPLED_IMAGES_DIR, ORIGINAL_IMAGES_DIR, VIDEOS_DIR, mo):
     image_source = mo.ui.dropdown(
         options={
             "Original": "original",
@@ -321,7 +315,7 @@ def _(
         label="Video file",
     )
     bag_browser = mo.ui.file_browser(
-        initial_path=LOCAL_DATA_DIR,
+        initial_path=BAGS_DIR,
         filetypes=[".bag"],
         selection_mode="file",
         multiple=False,
@@ -342,6 +336,8 @@ def _(
 @app.cell
 def _(bag_browser, cv2, image_source, mo, video_browser):
     frame_selector = None
+    depth_only_bag = False
+    bag_intrinsics = None
 
     if image_source.value == "video" and video_browser.value:
         _path = str(video_browser.value[0].path)
@@ -358,9 +354,10 @@ def _(bag_browser, cv2, image_source, mo, video_browser):
                 label=f"Frame (of {_total}, {_fps:.1f} fps)",
             )
     elif image_source.value == "bag" and bag_browser.value:
-        from fish_project.bag_reader import count_bag_frames
+        from fish_project.bag_reader import count_bag_frames, has_color_stream
 
-        _total = count_bag_frames(str(bag_browser.value[0].path))
+        _bag_path = str(bag_browser.value[0].path)
+        _total = count_bag_frames(_bag_path)
         if _total > 0:
             frame_selector = mo.ui.slider(
                 start=0,
@@ -369,13 +366,18 @@ def _(bag_browser, cv2, image_source, mo, video_browser):
                 value=0,
                 label=f"Frame (of {_total})",
             )
-    return (frame_selector,)
+        if not has_color_stream(_bag_path):
+            depth_only_bag = True
+            from fish_project.bag_reader import get_depth_intrinsics
+
+            bag_intrinsics = get_depth_intrinsics(_bag_path)
+    return bag_intrinsics, depth_only_bag, frame_selector
 
 
 @app.cell
 def _(
+    BAGS_DIR,
     DOWNSAMPLED_IMAGES_DIR,
-    LOCAL_DATA_DIR,
     ORIGINAL_IMAGES_DIR,
     VIDEOS_DIR,
     bag_browser,
@@ -401,7 +403,7 @@ def _(
         _source_note = mo.md(f"Library root: `{VIDEOS_DIR}`")
     elif image_source.value == "bag":
         _active_control = bag_browser
-        _source_note = mo.md(f"Library root: `{LOCAL_DATA_DIR}`")
+        _source_note = mo.md(f"Library root: `{BAGS_DIR}`")
     else:
         _active_control = image_upload
         _source_note = mo.md("Upload a single image from your machine.")
@@ -561,7 +563,7 @@ def _(mo):
 
 
 @app.cell
-def _(ClickableImage, frame_to_data_url, mo, selected_image):
+def _(ClickableImage, depth_only_bag, frame_to_data_url, mo, selected_image):
     calibration_widget = mo.ui.anywidget(
         ClickableImage(src=frame_to_data_url(selected_image), points=[])
     )
@@ -573,49 +575,116 @@ def _(ClickableImage, frame_to_data_url, mo, selected_image):
         label="Real-world distance (cm)",
     )
 
-    mo.vstack(
-        [
-            mo.md("## Calibration"),
-            mo.md(
-                "Click **Point A**, then **Point B** on the image to calibrate from pixels to centimeters. "
-                "Zoom with **+ / −**; mouse wheel scrolls the page. When zoomed, use the **arrow buttons** to pan. Click again to reset points."
-            ),
-            calibration_widget,
-            ref_length_cm,
-        ]
-    )
+    if depth_only_bag:
+        _output = mo.vstack(
+            [
+                mo.md("## Distance Measurement"),
+                mo.md(
+                    "Click **Point A**, then **Point B** on the depth image to measure pixel distance. "
+                    "Zoom with **+ / −**; use the **arrow buttons** to pan. Click again to reset points."
+                ),
+                calibration_widget,
+            ]
+        )
+    else:
+        _output = mo.vstack(
+            [
+                mo.md("## Calibration"),
+                mo.md(
+                    "Click **Point A**, then **Point B** on the image to calibrate from pixels to centimeters. "
+                    "Zoom with **+ / −**; mouse wheel scrolls the page. When zoomed, use the **arrow buttons** to pan. Click again to reset points."
+                ),
+                calibration_widget,
+                ref_length_cm,
+            ]
+        )
+    _output
     return calibration_widget, ref_length_cm
 
 
 @app.cell
-def _(calibration_widget, mo, np, ref_length_cm):
+def _(
+    bag_browser,
+    bag_intrinsics,
+    calibration_widget,
+    depth_only_bag,
+    frame_selector,
+    mo,
+    np,
+    ref_length_cm,
+):
     px_per_cm = None
 
     _points = calibration_widget.value.get("points", [])
-    if len(_points) == 2 and ref_length_cm.value > 0:
-        _point_a, _point_b = _points
-        _px_dist = float(
-            np.sqrt(
-                (_point_b[0] - _point_a[0]) ** 2
-                + (_point_b[1] - _point_a[1]) ** 2
+
+    if depth_only_bag:
+        if len(_points) == 2:
+            _point_a, _point_b = _points
+            _result = f"**A** ({_point_a[0]}, {_point_a[1]}) → **B** ({_point_b[0]}, {_point_b[1]})"
+
+            if bag_intrinsics and bag_browser.value and frame_selector is not None:
+                from fish_project.bag_reader import extract_raw_depth
+
+                _raw = extract_raw_depth(
+                    str(bag_browser.value[0].path), frame_selector.value
+                )
+                if _raw is not None:
+                    _d1 = float(_raw[_point_a[1], _point_a[0]])
+                    _d2 = float(_raw[_point_b[1], _point_b[0]])
+                    _du = bag_intrinsics["depth_units"]
+                    _fx = bag_intrinsics["fx"]
+                    _fy = bag_intrinsics["fy"]
+                    _cx = bag_intrinsics["cx"]
+                    _cy = bag_intrinsics["cy"]
+
+                    _x1 = (_point_a[0] - _cx) * _d1 * _du / _fx
+                    _y1 = (_point_a[1] - _cy) * _d1 * _du / _fy
+                    _z1 = _d1 * _du
+                    _x2 = (_point_b[0] - _cx) * _d2 * _du / _fx
+                    _y2 = (_point_b[1] - _cy) * _d2 * _du / _fy
+                    _z2 = _d2 * _du
+
+                    _dist_m = float(
+                        np.sqrt((_x2 - _x1) ** 2 + (_y2 - _y1) ** 2 + (_z2 - _z1) ** 2)
+                    )
+                    _dist_cm = _dist_m * 100
+                    _result += f": **{_dist_cm:.1f} cm**"
+                    if _d1 == 0 or _d2 == 0:
+                        _result += " *(warning: one or both points have zero depth)*"
+
+            mo.output.replace(mo.md(_result))
+        else:
+            mo.output.replace(
+                mo.md("*Click two points on the depth image to measure distance.*")
             )
-        )
-        px_per_cm = _px_dist / ref_length_cm.value
-        mo.output.replace(
-            mo.md(
-                f"**A** ({_point_a[0]}, {_point_a[1]}) → **B** ({_point_b[0]}, {_point_b[1]}): "
-                f"**{_px_dist:.1f} px** = **{ref_length_cm.value:.1f} cm** → **{px_per_cm:.2f} px/cm**"
-            )
-        )
     else:
-        mo.output.replace(
-            mo.md("*Click two reference points on the image to calibrate.*")
-        )
+        if len(_points) == 2 and ref_length_cm.value > 0:
+            _point_a, _point_b = _points
+            _px_dist = float(
+                np.sqrt(
+                    (_point_b[0] - _point_a[0]) ** 2
+                    + (_point_b[1] - _point_a[1]) ** 2
+                )
+            )
+            px_per_cm = _px_dist / ref_length_cm.value
+            mo.output.replace(
+                mo.md(
+                    f"**A** ({_point_a[0]}, {_point_a[1]}) → **B** ({_point_b[0]}, {_point_b[1]}): "
+                    f"**{_px_dist:.1f} px** = **{ref_length_cm.value:.1f} cm** → **{px_per_cm:.2f} px/cm**"
+                )
+            )
+        else:
+            mo.output.replace(
+                mo.md("*Click two reference points on the image to calibrate.*")
+            )
     return (px_per_cm,)
 
 
 @app.cell
-def _(mo):
+def _(depth_only_bag, mo):
+    weight_selector = None
+    mo.stop(depth_only_bag)
+
     from fish_project.paths import detector_weight_choices
 
     _choices = detector_weight_choices()
@@ -643,6 +712,7 @@ def _(
     clahe_clip_slider,
     conf_slider,
     contour_area_slider,
+    depth_only_bag,
     detect_frame_shared,
     draw_detections,
     frame_to_image_bytes,
@@ -658,6 +728,9 @@ def _(
     use_clahe_switch,
     weight_selector,
 ):
+    detections = []
+    mo.stop(depth_only_bag)
+
     import torch
     from pathlib import Path
 
@@ -724,7 +797,8 @@ def _(
 
 
 @app.cell
-def _(build_detection_table, detections, mo, px_per_cm):
+def _(build_detection_table, depth_only_bag, detections, mo, px_per_cm):
+    mo.stop(depth_only_bag)
     if detections:
         _df = build_detection_table(detections, px_per_cm=px_per_cm)
         mo.output.replace(
@@ -741,7 +815,16 @@ def _(build_detection_table, detections, mo, px_per_cm):
 
 
 @app.cell
-def _(cv2, detections, mo, padding_slider, plt, selected_image):
+def _(
+    cv2,
+    depth_only_bag,
+    detections,
+    mo,
+    padding_slider,
+    plt,
+    selected_image,
+):
+    mo.stop(depth_only_bag)
     _fish_with_edges = [
         (_index, _detection)
         for _index, _detection in enumerate(detections)
@@ -785,7 +868,10 @@ def _(cv2, detections, mo, padding_slider, plt, selected_image):
 
 
 @app.cell
-def _(detections, mo):
+def _(depth_only_bag, detections, mo):
+    actual_length_inputs = None
+    actual_width_inputs = None
+    mo.stop(depth_only_bag)
     if detections:
         actual_length_inputs = mo.ui.array(
             [
@@ -827,8 +913,6 @@ def _(detections, mo):
             )
         )
     else:
-        actual_length_inputs = None
-        actual_width_inputs = None
         mo.output.replace(mo.md("*No detections to compare.*"))
     return actual_length_inputs, actual_width_inputs
 
@@ -837,11 +921,13 @@ def _(detections, mo):
 def _(
     actual_length_inputs,
     actual_width_inputs,
+    depth_only_bag,
     detections,
     mo,
     pd,
     px_per_cm,
 ):
+    mo.stop(depth_only_bag)
     mo.stop(
         actual_length_inputs is None or actual_width_inputs is None,
         mo.md("*No detections — nothing to compare.*"),

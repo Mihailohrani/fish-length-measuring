@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_DATA_DIR = PROJECT_ROOT / "data"
 MODELS_DIR = LOCAL_DATA_DIR / "models"
 VIDEOS_DIR = LOCAL_DATA_DIR / "videos"
+BAGS_DIR = LOCAL_DATA_DIR / "bags"
 IMAGES_DIR = LOCAL_DATA_DIR / "images"
 ORIGINAL_IMAGES_DIR = IMAGES_DIR / "original"
 DOWNSAMPLED_IMAGES_DIR = IMAGES_DIR / "downsampled"
@@ -33,6 +34,7 @@ def ensure_local_data_dirs() -> None:
         LOCAL_DATA_DIR,
         MODELS_DIR,
         VIDEOS_DIR,
+        BAGS_DIR,
         IMAGES_DIR,
         ORIGINAL_IMAGES_DIR,
         DOWNSAMPLED_IMAGES_DIR,
