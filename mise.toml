@@ -10,7 +10,7 @@ description = "Install Python deps and pull Git LFS assets"
 run = ["uv sync", "git lfs install", "git lfs pull"]
 
 [tasks.prod]
-run = 'uv run marimo run --headless src/fish_project/notebook.py'
+run = 'uv run marimo run src/fish_project/notebook.py'
 
 [tasks.dev]
 run = 'uv run marimo edit --headless --mcp --no-token src/fish_project/notebook.py'
